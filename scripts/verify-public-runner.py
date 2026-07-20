@@ -35,9 +35,12 @@ def sha_file(path: Path) -> str:
             digest.update(block)
     return digest.hexdigest()
 
+def canonical_inventory(items: list[dict]) -> list[dict]:
+    return sorted(items,key=lambda value:value["path"].encode("utf-8"))
+
 def framed_tree(items: list[dict]) -> str:
     digest=hashlib.sha256()
-    for item in sorted(items,key=lambda value:value["path"]):
+    for item in canonical_inventory(items):
         path=item["path"].encode("utf-8")
         digest.update(len(path).to_bytes(8,"big")); digest.update(path)
         digest.update(int(item["byteLength"]).to_bytes(8,"big"))
@@ -68,7 +71,7 @@ def load_manifest(path: Path) -> dict:
         if path.is_absolute() or ".." in path.parts or path.as_posix()!=item["path"] or not item["path"]:
             raise SystemExit("unsafe export inventory path")
         paths.append(item["path"])
-    if paths!=sorted(set(paths)) or framed_tree(inventory)!=manifest["framedTreeSha256"]:
+    if paths!=[item["path"] for item in canonical_inventory(inventory)] or len(paths)!=len(set(paths)) or framed_tree(inventory)!=manifest["framedTreeSha256"]:
         raise SystemExit("inventory order or framedTreeSha256 mismatch")
     return manifest
 
@@ -99,7 +102,7 @@ def verify_export(args) -> None:
             item={"path":rel,"byteLength":size,"sha256":digest.hexdigest()}
             if item!=expected_items[rel]: raise SystemExit("archive file inventory mismatch")
             actual.append(item)
-    if sorted(actual,key=lambda value:value["path"])!=manifest["fileInventory"] or framed_tree(actual)!=manifest["framedTreeSha256"]:
+    if canonical_inventory(actual)!=manifest["fileInventory"] or framed_tree(actual)!=manifest["framedTreeSha256"]:
         raise SystemExit("archive inventory completeness mismatch")
     print("PASS private export archive and detached manifest verified before extraction")
 
