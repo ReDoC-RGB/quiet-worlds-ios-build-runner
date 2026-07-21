@@ -3,7 +3,7 @@ set -euo pipefail
 set +x
 umask 077
 
-required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL)
+required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_MANIFEST_URL)
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { printf 'required protected input is missing\n' >&2; exit 2; }
 done
@@ -21,17 +21,18 @@ mkdir -p "${ROOT}"
 cleanup() { "${GITHUB_WORKSPACE}/scripts/cleanup.sh"; }
 trap cleanup EXIT
 
-if [[ "${QW_EXPORT_URL}" == *\?* ]]; then
-  MANIFEST_URL="${QW_EXPORT_URL}&manifest=1"
-else
-  MANIFEST_URL="${QW_EXPORT_URL}?manifest=1"
-fi
 curl --fail --silent --show-error --location --proto '=https' \
   --header "Authorization: Bearer ${QW_EXPORT_TOKEN}" \
   --output "${EXPORT_ARCHIVE}" "${QW_EXPORT_URL}"
 curl --fail --silent --show-error --location --proto '=https' \
   --header "Authorization: Bearer ${QW_EXPORT_TOKEN}" \
-  --output "${EXPORT_MANIFEST}" "${MANIFEST_URL}"
+  --output "${EXPORT_MANIFEST}" "${QW_MANIFEST_URL}"
+[[ "$(shasum -a 256 "${EXPORT_ARCHIVE}" | cut -d ' ' -f 1)" == "${QW_EXPORT_SHA256}" ]] || { printf 'archive authority mismatch\n' >&2; exit 2; }
+[[ "$(shasum -a 256 "${EXPORT_MANIFEST}" | cut -d ' ' -f 1)" == "fb9e2b95f5b5cef5eeef4852242d0261099597f1bb31a5ed10e2e2993a3f484e" ]] || { printf 'manifest authority mismatch\n' >&2; exit 2; }
+python3 - "${EXPORT_MANIFEST}" <<'PY'
+import json,sys
+b=open(sys.argv[1],'rb').read();assert not b.startswith(b'\x1f\x8b');x=json.loads(b.decode('utf-8'));assert len(x['fileInventory'])==2994 and x['framedTreeSha256']=='82e6bd71b0dfbcdb80f61e342a41622e2212194e59c5877df84dec25ab420472'
+PY
 python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-export \
   --archive "${EXPORT_ARCHIVE}" --manifest "${EXPORT_MANIFEST}" --expected-sha "${QW_EXPORT_SHA256}"
 mkdir -p "${ROOT}/payload"
@@ -156,5 +157,5 @@ unset QW_APP_SIGNING_CERT_SHA QW_EXPECTED_CERT_SHA QW_EXPECTED_TEAM_ID QW_EXPECT
 mkdir -p "${RESULT_DIR}"
 install -m 0600 "${IPA}" "${RESULT_DIR}/quiet-worlds.ipa"
 install -m 0600 "${VERIFICATION}" "${RESULT_DIR}/quiet-worlds-ios-verification.json"
-unset QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL MANIFEST_URL
+unset QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_MANIFEST_URL
 printf 'PASS one signed Ad Hoc IPA was verified and staged for one private artifact upload\n'

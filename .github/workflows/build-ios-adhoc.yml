@@ -21,6 +21,7 @@ jobs:
           QW_EXPORT_SHA256: ${{ secrets.QW_EXPORT_SHA256 }}
           QW_EXPORT_TOKEN: ${{ secrets.QW_EXPORT_TOKEN }}
           QW_EXPORT_URL: ${{ secrets.QW_EXPORT_URL }}
+          QW_MANIFEST_URL: ${{ secrets.QW_MANIFEST_URL }}
         run: bash scripts/build-sign-return.sh
       - name: Upload verified IPA result
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
