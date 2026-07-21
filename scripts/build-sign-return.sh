@@ -8,6 +8,23 @@ for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { printf 'required protected input is missing\n' >&2; exit 2; }
 done
 
+AUTHORITY_FILE="${GITHUB_WORKSPACE}/release-authority.json"
+python3 - "${AUTHORITY_FILE}" <<'PY'
+import json,os,sys
+x=json.load(open(sys.argv[1],encoding='utf-8'))
+assert set(x)=={'schema','archiveSha256','manifestSha256','manifestByteLength','inventoryCount','framedTreeSha256','candidateCommit','candidateTree'}
+assert x['schema']==1 and x['manifestByteLength']>0
+expected={
+  'archiveSha256':os.environ['QW_EXPORT_SHA256'],
+  'manifestSha256':os.environ['QW_EXPORT_MANIFEST_SHA256'],
+  'inventoryCount':int(os.environ['QW_EXPORT_INVENTORY_COUNT']),
+  'framedTreeSha256':os.environ['QW_EXPORT_FRAMED_TREE_SHA256'],
+  'candidateCommit':os.environ['QW_CANDIDATE_COMMIT'],
+  'candidateTree':os.environ['QW_CANDIDATE_TREE'],
+}
+assert all(x[k]==v for k,v in expected.items())
+PY
+
 ROOT="${RUNNER_TEMP}/qw-ios-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 RESULT_DIR="${RUNNER_TEMP}/qw-result-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 DIAGNOSTIC_DIR="${RUNNER_TEMP}/qw-diagnostic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
