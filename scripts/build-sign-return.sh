@@ -182,26 +182,53 @@ IPA="$(find "${IPA_DIR}" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
 
 VERIFY_ROOT="${ROOT}/verify-ipa"
 mkdir -p "${VERIFY_ROOT}"
+# Keep archive integrity/path/type/symlink verification before all extraction.
 python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-ipa-archive --ipa "${IPA}"
-ditto -x -k "${IPA}" "${VERIFY_ROOT}"
-APP_COUNT="$(find "${VERIFY_ROOT}/Payload" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
-[[ "${APP_COUNT}" == 1 ]] || { printf 'expected one signed app in IPA\n' >&2; exit 9; }
-APP="$(find "${VERIFY_ROOT}/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
-codesign --verify --deep --strict --verbose=2 "${APP}" >"${ROOT}/codesign-verify.log" 2>&1
-APP_CERT_PREFIX="${ROOT}/app-signing-cert"
-codesign --display --extract-certificates "${APP_CERT_PREFIX}" "${APP}" >"${ROOT}/codesign-display.log" 2>&1
-[[ -f "${APP_CERT_PREFIX}0" ]] || { printf 'app signing certificate extraction failed\n' >&2; exit 10; }
-QW_APP_SIGNING_CERT_SHA="$(shasum -a 256 "${APP_CERT_PREFIX}0" | cut -d ' ' -f 1)"
-[[ "${QW_APP_SIGNING_CERT_SHA}" == "${QW_EXPECTED_CERT_SHA}" ]] || { printf 'app signing certificate continuity mismatch\n' >&2; exit 11; }
-export QW_APP_SIGNING_CERT_SHA
-EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${APP}/Info.plist")"
-lipo -archs "${APP}/${EXECUTABLE}" | tr ' ' '\n' | grep -Fx arm64 >/dev/null
-VERIFICATION="${ROOT}/quiet-worlds-ios-verification.json"
-python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-ipa \
-  --ipa "${IPA}" --manifest "${EXPORT_MANIFEST}" --output "${VERIFICATION}"
+POST_IPA_LOG="${ROOT}/post-ipa-checkpoint.log"
+# shellcheck source=scripts/post-ipa-checkpoints.sh
+source "${GITHUB_WORKSPACE}/scripts/post-ipa-checkpoints.sh"
+
+locate_app() {
+  APP_COUNT="$(find "${VERIFY_ROOT}/Payload" -maxdepth 1 -type d -name '*.app' -print | wc -l | tr -d ' ')"
+  [[ "${APP_COUNT}" == 1 ]] || { printf 'expected one signed app in IPA\n' >&2; return 9; }
+  APP="$(find "${VERIFY_ROOT}/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+}
+verify_codesign() {
+  codesign --verify --deep --strict --verbose=2 "${APP}"
+}
+extract_signing_certificate() {
+  APP_CERT_PREFIX="${ROOT}/app-signing-cert"
+  codesign --display --extract-certificates "${APP_CERT_PREFIX}" "${APP}"
+  [[ -f "${APP_CERT_PREFIX}0" ]] || { printf 'app signing certificate extraction failed\n' >&2; return 10; }
+}
+verify_certificate_continuity() {
+  QW_APP_SIGNING_CERT_SHA="$(shasum -a 256 "${APP_CERT_PREFIX}0" | cut -d ' ' -f 1)"
+  [[ "${QW_APP_SIGNING_CERT_SHA}" == "${QW_EXPECTED_CERT_SHA}" ]] || { printf 'app signing certificate continuity mismatch\n' >&2; return 11; }
+  export QW_APP_SIGNING_CERT_SHA
+}
+verify_arm64() {
+  EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${APP}/Info.plist")"
+  lipo -archs "${APP}/${EXECUTABLE}" | tr ' ' '\n' | grep -Fx arm64 >/dev/null
+}
+verify_ipa_identity() {
+  VERIFICATION="${ROOT}/quiet-worlds-ios-verification.json"
+  python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-ipa \
+    --ipa "${IPA}" --manifest "${EXPORT_MANIFEST}" --output "${VERIFICATION}"
+}
+stage_result() {
+  mkdir -p "${RESULT_DIR}"
+  install -m 0600 "${IPA}" "${RESULT_DIR}/quiet-worlds.ipa"
+  install -m 0600 "${VERIFICATION}" "${RESULT_DIR}/quiet-worlds-ios-verification.json"
+}
+
+qw_run_checkpoint extract_ipa unzip -q "${IPA}" -d "${VERIFY_ROOT}"
+qw_run_checkpoint locate_app locate_app
+qw_run_checkpoint verify_codesign verify_codesign
+qw_run_checkpoint extract_signing_certificate extract_signing_certificate
+qw_run_checkpoint verify_certificate_continuity verify_certificate_continuity
+qw_run_checkpoint verify_arm64 verify_arm64
+qw_run_checkpoint verify_ipa_identity verify_ipa_identity
+qw_run_checkpoint stage_result stage_result
 unset QW_APP_SIGNING_CERT_SHA QW_EXPECTED_CERT_SHA QW_EXPECTED_TEAM_ID QW_EXPECTED_PROFILE_UUID PROFILE_UUID PROFILE_NAME TEAM_ID APPLICATION_IDENTIFIER
-mkdir -p "${RESULT_DIR}"
-install -m 0600 "${IPA}" "${RESULT_DIR}/quiet-worlds.ipa"
-install -m 0600 "${VERIFICATION}" "${RESULT_DIR}/quiet-worlds-ios-verification.json"
 unset QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_MANIFEST_URL
 printf 'PASS one signed Ad Hoc IPA was verified and staged for one private artifact upload\n'
