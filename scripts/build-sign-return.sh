@@ -197,12 +197,15 @@ verify_codesign() {
   codesign --verify --deep --strict --verbose=2 "${APP}"
 }
 extract_signing_certificate() {
-  APP_CERT_PREFIX="${ROOT}/app-signing-cert"
-  codesign --display --extract-certificates "${APP_CERT_PREFIX}" "${APP}"
-  [[ -f "${APP_CERT_PREFIX}0" ]] || { printf 'app signing certificate extraction failed\n' >&2; return 10; }
+  APP_CERT_LEAF="${ROOT}/codesign0"
+  (
+    cd "${ROOT}"
+    codesign --display --extract-certificates "${APP}"
+  )
+  [[ -f "${APP_CERT_LEAF}" ]] || { printf 'app signing certificate extraction failed\n' >&2; return 10; }
 }
 verify_certificate_continuity() {
-  QW_APP_SIGNING_CERT_SHA="$(shasum -a 256 "${APP_CERT_PREFIX}0" | cut -d ' ' -f 1)"
+  QW_APP_SIGNING_CERT_SHA="$(shasum -a 256 "${APP_CERT_LEAF}" | cut -d ' ' -f 1)"
   [[ "${QW_APP_SIGNING_CERT_SHA}" == "${QW_EXPECTED_CERT_SHA}" ]] || { printf 'app signing certificate continuity mismatch\n' >&2; return 11; }
   export QW_APP_SIGNING_CERT_SHA
 }

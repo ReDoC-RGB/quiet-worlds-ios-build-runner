@@ -30,6 +30,11 @@ assert text.count(safety) == 1
 assert text.count(extract) == 1
 assert text.index(safety) < text.index(extract)
 assert 'ditto -x -k' not in text
+assert 'APP_CERT_LEAF="${ROOT}/codesign0"' in text
+assert 'cd "${ROOT}"\n    codesign --display --extract-certificates "${APP}"' in text
+assert 'codesign --display --extract-certificates "${APP_CERT_PREFIX}" "${APP}"' not in text
+assert 'shasum -a 256 "${APP_CERT_LEAF}"' in text
+assert 'APP_CERT_PREFIX' not in text
 assert re.findall(r'\bPRODUCT_BUNDLE_IDENTIFIER(?:_[A-Za-z0-9_]+)?=', text[text.index('xcodebuild "${XCODE_CONTAINER_ARGS[@]}"'):text.index('XCODEBUILD_STATUS=$?')]) == []
 assert text.count('PROVISIONING_PROFILE_SPECIFIER_APP="${PROFILE_NAME}"') == 1
 checkpoints = [
@@ -40,6 +45,68 @@ for checkpoint in checkpoints:
     assert text.count(f'qw_run_checkpoint {checkpoint} ') == 1
 print('PASS static post-IPA ordering/extractor/checkpoint contract')
 PY
+
+# Exercise the production certificate functions with a codesign mock that only
+# accepts Apple's default-prefix form and creates codesign0 in the current directory.
+FUNCTIONS="${FIXTURE}/certificate-functions.sh"
+python3 - "${BUILD}" "${FUNCTIONS}" <<'PY'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+start = text.index('extract_signing_certificate() {')
+end = text.index('verify_arm64() {', start)
+Path(sys.argv[2]).write_text(text[start:end])
+PY
+
+ROOT="${FIXTURE}/certificate-success"
+APP="${FIXTURE}/Payload/Fixture.app"
+mkdir -p "${ROOT}" "${APP}"
+# shellcheck disable=SC1090
+source "${FUNCTIONS}"
+codesign() {
+  [[ "$#" == 3 ]]
+  [[ "$1" == --display && "$2" == --extract-certificates && "$3" == "${APP}" ]]
+  [[ "${PWD}" == "${ROOT}" ]]
+  printf 'fixture leaf certificate' >codesign0
+}
+QW_EXPECTED_CERT_SHA="$(printf 'fixture leaf certificate' | shasum -a 256 | cut -d ' ' -f 1)"
+DIAGNOSTIC_DIR="${FIXTURE}/diagnostic-certificate-success"
+qw_run_checkpoint extract_signing_certificate extract_signing_certificate
+qw_run_checkpoint verify_certificate_continuity verify_certificate_continuity
+[[ "${APP_CERT_LEAF}" == "${ROOT}/codesign0" ]]
+[[ "${QW_APP_SIGNING_CERT_SHA}" == "${QW_EXPECTED_CERT_SHA}" ]]
+printf 'PASS mocked default-prefix codesign created codesign0 and advanced through certificate continuity\n'
+
+# A successful codesign process that omits codesign0 must retain checkpoint 10.
+ROOT="${FIXTURE}/certificate-missing"
+mkdir -p "${ROOT}"
+codesign() {
+  [[ "$#" == 3 ]]
+  [[ "$1" == --display && "$2" == --extract-certificates && "$3" == "${APP}" ]]
+  [[ "${PWD}" == "${ROOT}" ]]
+  return 0
+}
+DIAGNOSTIC_DIR="${FIXTURE}/diagnostic-certificate-missing"
+set +e
+(
+  set -euo pipefail
+  qw_run_checkpoint extract_signing_certificate extract_signing_certificate
+) >"${FIXTURE}/certificate-missing.out" 2>&1
+status=$?
+set -e
+[[ "${status}" == 10 ]]
+grep -F 'CHECKPOINT extract_signing_certificate status=10' "${FIXTURE}/certificate-missing.out"
+python3 - "${DIAGNOSTIC_DIR}" <<'PY'
+import json, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+summary = json.loads((out/'summary.json').read_text())
+assert summary['checkpoint'] == 'extract_signing_certificate'
+assert summary['status'] == 10
+log = (out/'command-output-sanitized.log').read_text()
+assert log == 'app signing certificate extraction failed\n'
+PY
+printf 'PASS missing codesign0 retained checkpoint extract_signing_certificate status 10 and sanitized diagnostic\n'
 
 SAFE_IPA="${FIXTURE}/safe.ipa"
 SAFE_OUT="${FIXTURE}/safe-out"
