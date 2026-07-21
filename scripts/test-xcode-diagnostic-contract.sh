@@ -22,7 +22,8 @@ rm -rf -- "${OLD_ROOT}"
 [[ ! -e "${OLD_ROOT}/xcodebuild.log" ]]
 
 ROOT="${RUNNER_TEMP}/qw-ios-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-DIAGNOSTIC_DIR="${RUNNER_TEMP}/qw-diagnostic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+ARCHIVE_DIAGNOSTIC_DIR="${RUNNER_TEMP}/qw-diagnostic-archive-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+EXPORT_DIAGNOSTIC_DIR="${RUNNER_TEMP}/qw-diagnostic-export-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 PROTECTED_VALUES="${ROOT}/protected-values.nul"
 RAW_LOG="${ROOT}/xcodebuild.log"
 PROFILE_DEST="${HOME}/Library/MobileDevice/Provisioning Profiles/fixture.mobileprovision"
@@ -64,23 +65,23 @@ EOF
 
 python3 "${REPO_ROOT}/scripts/stage-xcode-diagnostic.py" \
   --raw-log "${RAW_LOG}" \
-  --output-dir "${DIAGNOSTIC_DIR}" \
+  --output-dir "${ARCHIVE_DIAGNOSTIC_DIR}" \
   --exit-status 65 \
   --phase archive \
   --protected-values-file "${PROTECTED_VALUES}"
 
-[[ "$(cat "${DIAGNOSTIC_DIR}/xcodebuild-exit-status.txt")" == 65 ]]
-grep -F "error: use of undeclared identifier 'QWFixtureCompilerFailure'" "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F 'Undefined symbols for architecture arm64:' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F "error: The project 'Unity-iPhone' does not contain a scheme named 'FixtureScheme'." "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F 'Provisioning profile "Fixture Ad Hoc"' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F 'com.apple.developer.associated-domains entitlement' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F 'error: Signing certificate "Apple Distribution" is not trusted.' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F '<GITHUB_WORKSPACE>' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F '<RUNNER_TEMP>' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
-grep -F '<HOME>' "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+[[ "$(cat "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-exit-status.txt")" == 65 ]]
+grep -F "error: use of undeclared identifier 'QWFixtureCompilerFailure'" "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F 'Undefined symbols for architecture arm64:' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F "error: The project 'Unity-iPhone' does not contain a scheme named 'FixtureScheme'." "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F 'Provisioning profile "Fixture Ad Hoc"' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F 'com.apple.developer.associated-domains entitlement' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F 'error: Signing certificate "Apple Distribution" is not trusted.' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F '<GITHUB_WORKSPACE>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F '<RUNNER_TEMP>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F '<HOME>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 
-python3 - "${DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" <<'PY'
+python3 - "${ARCHIVE_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" <<'PY'
 import json, sys
 from pathlib import Path
 out = Path(sys.argv[1])
@@ -95,9 +96,74 @@ assert summary["sanitizationProof"] == "PASS"
 assert summary["sanitizedLogByteLength"] > 0
 PY
 
+# GREEN: exportArchive fails after archive context was already appended to the same protected log.
+cat >> "${RAW_LOG}" <<EOF
+** ARCHIVE SUCCEEDED **
+Exporting archive with signing certificate "Apple Distribution"
+error: exportArchive fixture retained underlying Xcode export failure
+error: exportArchive: No profiles for 'com.wellmadesystems.quietworlds' were found
+Authorization: Basic ${FIXTURE_TOKEN}
+private export URL ${FIXTURE_URL}
+private absolute path ${RUNNER_TEMP}/qw-ios-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/QuietWorlds.xcarchive
+EOF
+
+python3 "${REPO_ROOT}/scripts/stage-xcode-diagnostic.py" \
+  --raw-log "${RAW_LOG}" \
+  --output-dir "${EXPORT_DIAGNOSTIC_DIR}" \
+  --exit-status 70 \
+  --phase export \
+  --protected-values-file "${PROTECTED_VALUES}"
+
+[[ "$(cat "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-exit-status.txt")" == 70 ]]
+grep -F "error: use of undeclared identifier 'QWFixtureCompilerFailure'" "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F '** ARCHIVE SUCCEEDED **' "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F 'error: exportArchive fixture retained underlying Xcode export failure' "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F "error: exportArchive: No profiles for 'com.wellmadesystems.quietworlds' were found" "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+
+python3 - "${EXPORT_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" <<'PY'
+import json, re, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+protected = [value for value in Path(sys.argv[2]).read_bytes().split(b"\0") if value]
+staged = b"\n".join(path.read_bytes() for path in sorted(out.iterdir()))
+for value in protected + [value.encode() for value in sys.argv[3:]]:
+    assert value not in staged
+text = staged.decode("utf-8", errors="replace")
+assert not re.search(r"(?i)https?://", text)
+authorization_lines = [line.strip() for line in text.splitlines() if re.match(r"(?i)^\s*authorization\s*:", line)]
+assert all("Basic" not in line and "Bearer" not in line for line in authorization_lines), authorization_lines
+summary = json.loads((out / "summary.json").read_text())
+assert summary["phase"] == "export"
+assert summary["xcodebuildExitStatus"] == 70
+assert summary["sanitizationProof"] == "PASS"
+assert summary["sanitizedLogByteLength"] > 0
+PY
+
+python3 - "${REPO_ROOT}/scripts/build-sign-return.sh" <<'PY'
+import re, sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text()
+pattern = re.compile(
+    r'set \+e\n'
+    r'xcodebuild -exportArchive -archivePath "\$\{ARCHIVE_PATH\}" \\\n'
+    r'  -exportPath "\$\{IPA_DIR\}" -exportOptionsPlist "\$\{EXPORT_OPTIONS\}" >>"\$\{XCODE_LOG\}" 2>&1\n'
+    r'XCODEBUILD_EXPORT_STATUS=\$\?\n'
+    r'set -e\n'
+    r'if \[\[ "\$\{XCODEBUILD_EXPORT_STATUS\}" -ne 0 \]\]; then\n'
+    r'.*?--exit-status "\$\{XCODEBUILD_EXPORT_STATUS\}" --phase export \\\n'
+    r'.*?complete sanitized export diagnostic staged outside cleanup root.*?\n'
+    r'  exit 7\nfi',
+    re.S,
+)
+assert pattern.search(source), "export wrapper does not capture/stage the real export status"
+assert source.count('xcodebuild -exportArchive -archivePath "${ARCHIVE_PATH}"') == 1
+PY
+
 bash "${REPO_ROOT}/scripts/cleanup.sh"
 [[ ! -e "${ROOT}" ]]
 [[ ! -e "${PROFILE_DEST}" ]]
-[[ -s "${DIAGNOSTIC_DIR}/xcodebuild-sanitized.log" ]]
-[[ -s "${DIAGNOSTIC_DIR}/summary.json" ]]
-printf 'PASS RED log-loss fixture and GREEN diagnostic sanitization/survival/cleanup fixtures\n'
+[[ -s "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log" ]]
+[[ -s "${ARCHIVE_DIAGNOSTIC_DIR}/summary.json" ]]
+[[ -s "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log" ]]
+[[ -s "${EXPORT_DIAGNOSTIC_DIR}/summary.json" ]]
+printf 'PASS RED log-loss fixture and GREEN archive/export diagnostic sanitization/survival/cleanup fixtures\n'

@@ -20,7 +20,7 @@ def main() -> None:
     parser.add_argument("--raw-log", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--exit-status", required=True, type=int)
-    parser.add_argument("--phase", required=True, choices=("archive",))
+    parser.add_argument("--phase", required=True, choices=("archive", "export"))
     parser.add_argument("--protected-values-file", required=True)
     args = parser.parse_args()
 

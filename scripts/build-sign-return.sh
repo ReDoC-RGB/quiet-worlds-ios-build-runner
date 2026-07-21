@@ -160,9 +160,20 @@ unset QW_PROFILE_NAME
 
 IPA_DIR="${ROOT}/ipa-output"
 mkdir -p "${IPA_DIR}"
-if ! xcodebuild -exportArchive -archivePath "${ARCHIVE_PATH}" \
-  -exportPath "${IPA_DIR}" -exportOptionsPlist "${EXPORT_OPTIONS}" >>"${XCODE_LOG}" 2>&1; then
-  printf 'Xcode Ad Hoc export failed; protected build log retained only for always-run deletion\n' >&2
+set +e
+xcodebuild -exportArchive -archivePath "${ARCHIVE_PATH}" \
+  -exportPath "${IPA_DIR}" -exportOptionsPlist "${EXPORT_OPTIONS}" >>"${XCODE_LOG}" 2>&1
+XCODEBUILD_EXPORT_STATUS=$?
+set -e
+if [[ "${XCODEBUILD_EXPORT_STATUS}" -ne 0 ]]; then
+  if ! python3 "${GITHUB_WORKSPACE}/scripts/stage-xcode-diagnostic.py" \
+    --raw-log "${XCODE_LOG}" --output-dir "${DIAGNOSTIC_DIR}" \
+    --exit-status "${XCODEBUILD_EXPORT_STATUS}" --phase export \
+    --protected-values-file "${PROTECTED_VALUES_FILE}"; then
+    printf 'Xcode Ad Hoc export failed and sanitized diagnostic staging failed\n' >&2
+    exit 7
+  fi
+  printf 'Xcode Ad Hoc export failed; complete sanitized export diagnostic staged outside cleanup root\n' >&2
   exit 7
 fi
 IPA_COUNT="$(find "${IPA_DIR}" -maxdepth 1 -type f -name '*.ipa' -print | wc -l | tr -d ' ')"
