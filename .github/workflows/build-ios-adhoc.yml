@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout infrastructure snapshot
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - name: Verify private export and sign one IPA
         env:
           QW_APPLE_P12_B64: ${{ secrets.QW_APPLE_P12_B64 }}
@@ -24,7 +24,7 @@ jobs:
           QW_MANIFEST_URL: ${{ secrets.QW_MANIFEST_URL }}
         run: bash scripts/build-sign-return.sh
       - name: Upload verified IPA result
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: qw-result-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/qw-result-${{ github.run_id }}-${{ github.run_attempt }}
@@ -33,7 +33,7 @@ jobs:
           if-no-files-found: error
       - name: Upload sanitized Xcode failure diagnostic
         if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: qw-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/qw-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
