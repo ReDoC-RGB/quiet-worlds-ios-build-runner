@@ -40,6 +40,7 @@ FIXTURE_URL='https://private.invalid/opaque/input'
 FIXTURE_PASSWORD='fixture-p12-password-must-not-survive'
 FIXTURE_P12_B64='RklYVFVSRV9QMTJfQ1JFREVOVElBTA=='
 FIXTURE_PROFILE_B64='RklYVFVSRV9QUk9GSUxFX0NSRURFTlRJQUw='
+FIXTURE_PRIVATE_LINUX_PATH='/home/private-builder/private-unity-export/Library/BuildCache/objects/fixture.o'
 python3 - "${PROTECTED_VALUES}" "${FIXTURE_TOKEN}" "${FIXTURE_URL}" "${FIXTURE_PASSWORD}" "${FIXTURE_P12_B64}" "${FIXTURE_PROFILE_B64}" <<'PY'
 import sys
 from pathlib import Path
@@ -61,6 +62,7 @@ private URL ${FIXTURE_URL}
 password ${FIXTURE_PASSWORD}
 p12 ${FIXTURE_P12_B64}
 profile ${FIXTURE_PROFILE_B64}
+private Linux build path ${FIXTURE_PRIVATE_LINUX_PATH}
 EOF
 
 python3 "${REPO_ROOT}/scripts/stage-xcode-diagnostic.py" \
@@ -80,15 +82,18 @@ grep -F 'error: Signing certificate "Apple Distribution" is not trusted.' "${ARC
 grep -F '<GITHUB_WORKSPACE>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 grep -F '<RUNNER_TEMP>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 grep -F '<HOME>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+grep -F '<PRIVATE_LINUX_ABSOLUTE_PATH>' "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
+! grep -F "${FIXTURE_PRIVATE_LINUX_PATH}" "${ARCHIVE_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 
-python3 - "${ARCHIVE_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" <<'PY'
-import json, sys
+python3 - "${ARCHIVE_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" "${FIXTURE_PRIVATE_LINUX_PATH}" <<'PY'
+import json, re, sys
 from pathlib import Path
 out = Path(sys.argv[1])
 protected = [value for value in Path(sys.argv[2]).read_bytes().split(b"\0") if value]
 staged = b"\n".join(path.read_bytes() for path in sorted(out.iterdir()))
 for value in protected + [value.encode() for value in sys.argv[3:]]:
     assert value not in staged
+assert not re.search(rb'(?<![A-Za-z0-9_.-])/home/[A-Za-z0-9_.-]+/', staged)
 summary = json.loads((out / "summary.json").read_text())
 assert summary["phase"] == "archive"
 assert summary["xcodebuildExitStatus"] == 65
@@ -120,7 +125,7 @@ grep -F '** ARCHIVE SUCCEEDED **' "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized
 grep -F 'error: exportArchive fixture retained underlying Xcode export failure' "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 grep -F "error: exportArchive: No profiles for 'com.wellmadesystems.quietworlds' were found" "${EXPORT_DIAGNOSTIC_DIR}/xcodebuild-sanitized.log"
 
-python3 - "${EXPORT_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" <<'PY'
+python3 - "${EXPORT_DIAGNOSTIC_DIR}" "${PROTECTED_VALUES}" "${RUNNER_TEMP}" "${HOME}" "${GITHUB_WORKSPACE}" "${FIXTURE_PRIVATE_LINUX_PATH}" <<'PY'
 import json, re, sys
 from pathlib import Path
 out = Path(sys.argv[1])
@@ -128,6 +133,7 @@ protected = [value for value in Path(sys.argv[2]).read_bytes().split(b"\0") if v
 staged = b"\n".join(path.read_bytes() for path in sorted(out.iterdir()))
 for value in protected + [value.encode() for value in sys.argv[3:]]:
     assert value not in staged
+assert not re.search(rb'(?<![A-Za-z0-9_.-])/home/[A-Za-z0-9_.-]+/', staged)
 text = staged.decode("utf-8", errors="replace")
 assert not re.search(r"(?i)https?://", text)
 authorization_lines = [line.strip() for line in text.splitlines() if re.match(r"(?i)^\s*authorization\s*:", line)]

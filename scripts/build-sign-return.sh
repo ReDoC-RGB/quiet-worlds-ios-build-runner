@@ -128,7 +128,7 @@ XCODE_LOG="${ROOT}/xcodebuild.log"
 set +e
 xcodebuild "${XCODE_CONTAINER_ARGS[@]}" -scheme Unity-iPhone -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "${ARCHIVE_PATH}" \
-  DEVELOPMENT_TEAM="${TEAM_ID}" PRODUCT_BUNDLE_IDENTIFIER=com.wellmadesystems.quietworlds \
+  DEVELOPMENT_TEAM="${TEAM_ID}" \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="${P12_CERT_SHA1}" \
   OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER_APP="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1
 XCODEBUILD_STATUS=$?

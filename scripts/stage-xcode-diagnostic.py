@@ -65,6 +65,11 @@ def main() -> None:
         text,
     )
     text = re.sub(r"(?i)https?://[^\s\"'<>]+", "<URL>", text)
+    text = re.sub(
+        r"(?<![A-Za-z0-9_.-])/home/[A-Za-z0-9_.-]+(?:/[^\s:\"'<>]+)+",
+        "<PRIVATE_LINUX_ABSOLUTE_PATH>",
+        text,
+    )
     sanitized = text.encode("utf-8")
     if not sanitized:
         raise SystemExit("sanitized Xcode log is empty")
@@ -106,6 +111,9 @@ def main() -> None:
     if re.search(r"(?i)https?://", staged_text):
         shutil.rmtree(output_dir)
         raise SystemExit("URL remained in staged diagnostic bytes")
+    if re.search(r"(?<![A-Za-z0-9_.-])/home/[A-Za-z0-9_.-]+/", staged_text):
+        shutil.rmtree(output_dir)
+        raise SystemExit("private Linux absolute path remained in staged diagnostic bytes")
 
 
 if __name__ == "__main__":
