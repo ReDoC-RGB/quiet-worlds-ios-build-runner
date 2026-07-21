@@ -10,6 +10,7 @@ done
 
 ROOT="${RUNNER_TEMP}/qw-ios-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 RESULT_DIR="${RUNNER_TEMP}/qw-result-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+DIAGNOSTIC_DIR="${RUNNER_TEMP}/qw-diagnostic-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 KEYCHAIN="${ROOT}/quiet-worlds.keychain-db"
 EXPORT_ARCHIVE="${ROOT}/quiet-worlds-xcode-export.tar.gz"
 EXPORT_MANIFEST="${ROOT}/quiet-worlds-xcode-export-manifest.json"
@@ -18,6 +19,21 @@ readonly EXPECTED_PROFILE_UUID="3b5d5cd7-a4d3-43ff-b3e1-c0c3a81ffdc8"
 readonly EXPECTED_PROFILE_SHA="fa3a0823eabfc9b6fd93325e7f5cd947b231325430823a603b75963468bab742"
 readonly EXPECTED_CERT_SHA="3870fd7a823c074b79fdf2862c3a57b5432bcce43b963e759f81ea3789e1a107"
 mkdir -p "${ROOT}"
+PROTECTED_VALUES_FILE="${ROOT}/protected-values.nul"
+python3 - "${PROTECTED_VALUES_FILE}" <<'PY'
+import os,re,sys
+required={
+    'QW_APPLE_P12_B64','QW_APPLE_P12_PASSWORD','QW_APPLE_PROFILE_B64',
+    'QW_EXPORT_SHA256','QW_EXPORT_TOKEN','QW_EXPORT_URL','QW_MANIFEST_URL',
+}
+protected_name=re.compile(r'(TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTHORIZATION|_URL$|^URL$|P12|PROFILE.*B64|_B64$|PRIVATE_KEY|API_KEY)',re.I)
+values=[]
+for name,value in os.environ.items():
+    if value and (name in required or protected_name.search(name)):
+        values.append(value.encode())
+open(sys.argv[1],'wb').write(b'\0'.join(values)+b'\0')
+PY
+chmod 0600 "${PROTECTED_VALUES_FILE}"
 cleanup() { "${GITHUB_WORKSPACE}/scripts/cleanup.sh"; }
 trap cleanup EXIT
 
@@ -109,12 +125,23 @@ fi
 ARCHIVE_PATH="${ROOT}/QuietWorlds.xcarchive"
 XCODE_LOG="${ROOT}/xcodebuild.log"
 # The protected log prevents signing values from entering public output. xcodebuild archive
-if ! xcodebuild "${XCODE_CONTAINER_ARGS[@]}" -scheme Unity-iPhone -configuration Release \
+set +e
+xcodebuild "${XCODE_CONTAINER_ARGS[@]}" -scheme Unity-iPhone -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "${ARCHIVE_PATH}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" PRODUCT_BUNDLE_IDENTIFIER=com.wellmadesystems.quietworlds \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="${P12_CERT_SHA1}" \
-  OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1; then
-  printf 'Xcode archive failed; protected build log retained only for always-run deletion\n' >&2
+  OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1
+XCODEBUILD_STATUS=$?
+set -e
+if [[ "${XCODEBUILD_STATUS}" -ne 0 ]]; then
+  if ! python3 "${GITHUB_WORKSPACE}/scripts/stage-xcode-diagnostic.py" \
+    --raw-log "${XCODE_LOG}" --output-dir "${DIAGNOSTIC_DIR}" \
+    --exit-status "${XCODEBUILD_STATUS}" --phase archive \
+    --protected-values-file "${PROTECTED_VALUES_FILE}"; then
+    printf 'Xcode archive failed and sanitized diagnostic staging failed\n' >&2
+    exit 6
+  fi
+  printf 'Xcode archive failed; complete sanitized diagnostic staged outside cleanup root\n' >&2
   exit 6
 fi
 

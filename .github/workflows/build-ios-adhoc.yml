@@ -31,6 +31,15 @@ jobs:
           retention-days: 1
           compression-level: 0
           if-no-files-found: error
+      - name: Upload sanitized Xcode failure diagnostic
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qw-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qw-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
       - name: Always remove transient signing and payload material
         if: ${{ always() }}
         run: bash scripts/cleanup.sh
