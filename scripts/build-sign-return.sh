@@ -130,7 +130,7 @@ xcodebuild "${XCODE_CONTAINER_ARGS[@]}" -scheme Unity-iPhone -configuration Rele
   -destination 'generic/platform=iOS' -archivePath "${ARCHIVE_PATH}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" PRODUCT_BUNDLE_IDENTIFIER=com.wellmadesystems.quietworlds \
   CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="${P12_CERT_SHA1}" \
-  OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1
+  OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER_APP="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1
 XCODEBUILD_STATUS=$?
 set -e
 if [[ "${XCODEBUILD_STATUS}" -ne 0 ]]; then
