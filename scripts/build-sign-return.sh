@@ -3,7 +3,7 @@ set -euo pipefail
 set +x
 umask 077
 
-required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_MANIFEST_URL)
+required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_MANIFEST_SHA256 QW_EXPORT_INVENTORY_COUNT QW_EXPORT_FRAMED_TREE_SHA256 QW_CANDIDATE_COMMIT QW_CANDIDATE_TREE QW_EXPORT_TOKEN QW_EXPORT_URL QW_MANIFEST_URL)
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { printf 'required protected input is missing\n' >&2; exit 2; }
 done
@@ -24,7 +24,9 @@ python3 - "${PROTECTED_VALUES_FILE}" <<'PY'
 import os,re,sys
 required={
     'QW_APPLE_P12_B64','QW_APPLE_P12_PASSWORD','QW_APPLE_PROFILE_B64',
-    'QW_EXPORT_SHA256','QW_EXPORT_TOKEN','QW_EXPORT_URL','QW_MANIFEST_URL',
+    'QW_EXPORT_SHA256','QW_EXPORT_MANIFEST_SHA256','QW_EXPORT_INVENTORY_COUNT',
+    'QW_EXPORT_FRAMED_TREE_SHA256','QW_CANDIDATE_COMMIT','QW_CANDIDATE_TREE',
+    'QW_EXPORT_TOKEN','QW_EXPORT_URL','QW_MANIFEST_URL',
 }
 protected_name=re.compile(r'(TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTHORIZATION|_URL$|^URL$|P12|PROFILE.*B64|_B64$|PRIVATE_KEY|API_KEY)',re.I)
 values=[]
@@ -44,10 +46,16 @@ curl --fail --silent --show-error --location --proto '=https' \
   --header "Authorization: Bearer ${QW_EXPORT_TOKEN}" \
   --output "${EXPORT_MANIFEST}" "${QW_MANIFEST_URL}"
 [[ "$(shasum -a 256 "${EXPORT_ARCHIVE}" | cut -d ' ' -f 1)" == "${QW_EXPORT_SHA256}" ]] || { printf 'archive authority mismatch\n' >&2; exit 2; }
-[[ "$(shasum -a 256 "${EXPORT_MANIFEST}" | cut -d ' ' -f 1)" == "fb9e2b95f5b5cef5eeef4852242d0261099597f1bb31a5ed10e2e2993a3f484e" ]] || { printf 'manifest authority mismatch\n' >&2; exit 2; }
+[[ "${QW_EXPORT_MANIFEST_SHA256}" =~ ^[0-9a-f]{64}$ && "${QW_EXPORT_FRAMED_TREE_SHA256}" =~ ^[0-9a-f]{64}$ && "${QW_CANDIDATE_COMMIT}" =~ ^[0-9a-f]{40}$ && "${QW_CANDIDATE_TREE}" =~ ^[0-9a-f]{40}$ && "${QW_EXPORT_INVENTORY_COUNT}" =~ ^[1-9][0-9]*$ ]] || { printf 'exact export authority shape mismatch\n' >&2; exit 2; }
+[[ "$(shasum -a 256 "${EXPORT_MANIFEST}" | cut -d ' ' -f 1)" == "${QW_EXPORT_MANIFEST_SHA256}" ]] || { printf 'manifest authority mismatch\n' >&2; exit 2; }
 python3 - "${EXPORT_MANIFEST}" <<'PY'
-import json,sys
-b=open(sys.argv[1],'rb').read();assert not b.startswith(b'\x1f\x8b');x=json.loads(b.decode('utf-8'));assert len(x['fileInventory'])==2994 and x['framedTreeSha256']=='82e6bd71b0dfbcdb80f61e342a41622e2212194e59c5877df84dec25ab420472'
+import json,os,sys
+b=open(sys.argv[1],'rb').read(); assert not b.startswith(b'\x1f\x8b')
+x=json.loads(b.decode('utf-8'))
+assert x['candidateCommit']==os.environ['QW_CANDIDATE_COMMIT']
+assert x['candidateTree']==os.environ['QW_CANDIDATE_TREE']
+assert len(x['fileInventory'])==int(os.environ['QW_EXPORT_INVENTORY_COUNT'])
+assert x['framedTreeSha256']==os.environ['QW_EXPORT_FRAMED_TREE_SHA256']
 PY
 python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-export \
   --archive "${EXPORT_ARCHIVE}" --manifest "${EXPORT_MANIFEST}" --expected-sha "${QW_EXPORT_SHA256}"
