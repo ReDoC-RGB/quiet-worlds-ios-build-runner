@@ -75,11 +75,19 @@ P12_CERT_PEM="${ROOT}/distribution-cert.pem"
 P12_CERT_DER="${ROOT}/distribution-cert.der"
 openssl pkcs12 -in "${P12}" -clcerts -nokeys -passin "pass:${QW_APPLE_P12_PASSWORD}" -out "${P12_CERT_PEM}" >/dev/null 2>&1
 openssl x509 -in "${P12_CERT_PEM}" -outform DER -out "${P12_CERT_DER}"
-P12_CERT_SHA1="$(shasum -a 1 "${P12_CERT_DER}" | cut -d ' ' -f 1)"
+P12_CERT_SHA1="$(shasum -a 1 "${P12_CERT_DER}" | cut -d ' ' -f 1 | tr '[:lower:]' '[:upper:]')"
 QW_EXPECTED_CERT_SHA="$(shasum -a 256 "${P12_CERT_DER}" | cut -d ' ' -f 1)"
 [[ "${QW_EXPECTED_CERT_SHA}" == "${EXPECTED_CERT_SHA}" ]] || { printf 'distribution certificate authority mismatch\n' >&2; exit 5; }
-IDENTITY_COUNT="$(security find-identity -v -p codesigning "${KEYCHAIN}" | grep -F "${P12_CERT_SHA1}" | wc -l | tr -d ' ')"
-[[ "${IDENTITY_COUNT}" == 1 ]] || { printf 'usable distribution identity mismatch\n' >&2; exit 5; }
+if ! IDENTITY_OUTPUT="$(security find-identity -v -p codesigning "${KEYCHAIN}")"; then
+  printf 'unable to enumerate usable distribution identities\n' >&2
+  exit 5
+fi
+if ! IDENTITY_COUNT="$(printf '%s\n' "${IDENTITY_OUTPUT}" | "${GITHUB_WORKSPACE}/scripts/count-signing-identities.sh" "${P12_CERT_SHA1}")"; then
+  printf 'invalid distribution identity lookup output\n' >&2
+  exit 5
+fi
+[[ "${IDENTITY_COUNT}" == 1 ]] || { printf 'usable distribution identity mismatch: expected 1, found %s\n' "${IDENTITY_COUNT}" >&2; exit 5; }
+unset IDENTITY_OUTPUT
 unset QW_APPLE_P12_PASSWORD KEYCHAIN_PASSWORD
 export QW_EXPECTED_CERT_SHA
 export QW_EXPECTED_TEAM_ID="${TEAM_ID}"
