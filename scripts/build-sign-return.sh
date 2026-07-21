@@ -46,15 +46,15 @@ open(sys.argv[1],'wb').write(base64.b64decode(os.environ['QW_APPLE_P12_B64'],val
 open(sys.argv[2],'wb').write(base64.b64decode(os.environ['QW_APPLE_PROFILE_B64'],validate=True))
 PY
 unset QW_APPLE_P12_B64 QW_APPLE_PROFILE_B64
+chmod 0600 "${P12}" "${PROFILE}"
 
 KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
 security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}"
 security set-keychain-settings -lut 21600 "${KEYCHAIN}"
 security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}"
 security import "${P12}" -k "${KEYCHAIN}" -P "${QW_APPLE_P12_PASSWORD}" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
-security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}" >/dev/null
+security set-key-partition-list -S apple-tool:,apple: -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}" >/dev/null
 security list-keychains -d user -s "${KEYCHAIN}"
-unset QW_APPLE_P12_PASSWORD KEYCHAIN_PASSWORD
 
 PROFILE_PLIST="${ROOT}/profile.plist"
 security cms -D -i "${PROFILE}" > "${PROFILE_PLIST}"
@@ -71,11 +71,14 @@ printf '%s\n' "${PROFILE_DEST}" > "${ROOT}/installed-profile-path.txt"
 
 P12_CERT_PEM="${ROOT}/distribution-cert.pem"
 P12_CERT_DER="${ROOT}/distribution-cert.der"
-# The private key is already imported. Export only the public certificate from the keychain for continuity.
-security find-certificate -c 'Apple Distribution' -p "${KEYCHAIN}" > "${P12_CERT_PEM}"
+openssl pkcs12 -in "${P12}" -clcerts -nokeys -passin "pass:${QW_APPLE_P12_PASSWORD}" -out "${P12_CERT_PEM}" >/dev/null 2>&1
 openssl x509 -in "${P12_CERT_PEM}" -outform DER -out "${P12_CERT_DER}"
+P12_CERT_SHA1="$(shasum -a 1 "${P12_CERT_DER}" | cut -d ' ' -f 1)"
 QW_EXPECTED_CERT_SHA="$(shasum -a 256 "${P12_CERT_DER}" | cut -d ' ' -f 1)"
 [[ "${QW_EXPECTED_CERT_SHA}" == "${EXPECTED_CERT_SHA}" ]] || { printf 'distribution certificate authority mismatch\n' >&2; exit 5; }
+IDENTITY_COUNT="$(security find-identity -v -p codesigning "${KEYCHAIN}" | grep -F "${P12_CERT_SHA1}" | wc -l | tr -d ' ')"
+[[ "${IDENTITY_COUNT}" == 1 ]] || { printf 'usable distribution identity mismatch\n' >&2; exit 5; }
+unset QW_APPLE_P12_PASSWORD KEYCHAIN_PASSWORD
 export QW_EXPECTED_CERT_SHA
 export QW_EXPECTED_TEAM_ID="${TEAM_ID}"
 export QW_EXPECTED_PROFILE_UUID="${PROFILE_UUID}"
@@ -99,8 +102,8 @@ XCODE_LOG="${ROOT}/xcodebuild.log"
 if ! xcodebuild "${XCODE_CONTAINER_ARGS[@]}" -scheme Unity-iPhone -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "${ARCHIVE_PATH}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" PRODUCT_BUNDLE_IDENTIFIER=com.wellmadesystems.quietworlds \
-  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' \
-  PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1; then
+  CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="${P12_CERT_SHA1}" \
+  OTHER_CODE_SIGN_FLAGS="--keychain ${KEYCHAIN}" PROVISIONING_PROFILE_SPECIFIER="${PROFILE_NAME}" archive >"${XCODE_LOG}" 2>&1; then
   printf 'Xcode archive failed; protected build log retained only for always-run deletion\n' >&2
   exit 6
 fi
