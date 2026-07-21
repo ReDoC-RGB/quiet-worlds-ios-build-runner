@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Checkout infrastructure snapshot
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Verify private export, sign one IPA, and return it privately
+      - name: Verify private export and sign one IPA
         env:
           QW_APPLE_P12_B64: ${{ secrets.QW_APPLE_P12_B64 }}
           QW_APPLE_P12_PASSWORD: ${{ secrets.QW_APPLE_P12_PASSWORD }}
@@ -21,9 +21,15 @@ jobs:
           QW_EXPORT_SHA256: ${{ secrets.QW_EXPORT_SHA256 }}
           QW_EXPORT_TOKEN: ${{ secrets.QW_EXPORT_TOKEN }}
           QW_EXPORT_URL: ${{ secrets.QW_EXPORT_URL }}
-          QW_RETURN_TOKEN: ${{ secrets.QW_RETURN_TOKEN }}
-          QW_RETURN_URL: ${{ secrets.QW_RETURN_URL }}
         run: bash scripts/build-sign-return.sh
+      - name: Upload verified IPA result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: qw-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/qw-result-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
       - name: Always remove transient signing and payload material
         if: ${{ always() }}
         run: bash scripts/cleanup.sh

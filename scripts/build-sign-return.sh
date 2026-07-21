@@ -3,12 +3,13 @@ set -euo pipefail
 set +x
 umask 077
 
-required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_RETURN_TOKEN QW_RETURN_URL)
+required=(QW_APPLE_P12_B64 QW_APPLE_P12_PASSWORD QW_APPLE_PROFILE_B64 QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL)
 for name in "${required[@]}"; do
   [[ -n "${!name:-}" ]] || { printf 'required protected input is missing\n' >&2; exit 2; }
 done
 
 ROOT="${RUNNER_TEMP}/qw-ios-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+RESULT_DIR="${RUNNER_TEMP}/qw-result-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 KEYCHAIN="${ROOT}/quiet-worlds.keychain-db"
 EXPORT_ARCHIVE="${ROOT}/quiet-worlds-xcode-export.tar.gz"
 EXPORT_MANIFEST="${ROOT}/quiet-worlds-xcode-export-manifest.json"
@@ -152,11 +153,8 @@ VERIFICATION="${ROOT}/quiet-worlds-ios-verification.json"
 python3 "${GITHUB_WORKSPACE}/scripts/verify-public-runner.py" verify-ipa \
   --ipa "${IPA}" --manifest "${EXPORT_MANIFEST}" --output "${VERIFICATION}"
 unset QW_APP_SIGNING_CERT_SHA QW_EXPECTED_CERT_SHA QW_EXPECTED_TEAM_ID QW_EXPECTED_PROFILE_UUID PROFILE_UUID PROFILE_NAME TEAM_ID APPLICATION_IDENTIFIER
-
-curl --fail --silent --show-error --location --proto '=https' \
-  --header "Authorization: Bearer ${QW_RETURN_TOKEN}" \
-  --form "ipa=@${IPA};type=application/octet-stream" \
-  --form "verification=@${VERIFICATION};type=application/json" \
-  --output "${ROOT}/return-response.txt" "${QW_RETURN_URL}"
-unset QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL QW_RETURN_TOKEN QW_RETURN_URL MANIFEST_URL
-printf 'PASS one signed Ad Hoc IPA was verified and returned directly to the bounded private route\n'
+mkdir -p "${RESULT_DIR}"
+install -m 0600 "${IPA}" "${RESULT_DIR}/quiet-worlds.ipa"
+install -m 0600 "${VERIFICATION}" "${RESULT_DIR}/quiet-worlds-ios-verification.json"
+unset QW_EXPORT_SHA256 QW_EXPORT_TOKEN QW_EXPORT_URL MANIFEST_URL
+printf 'PASS one signed Ad Hoc IPA was verified and staged for one private artifact upload\n'
