@@ -10,11 +10,12 @@ for name in "${required[@]}"; do
   grep -Fq "$name" "$runner" || { printf 'runner missing exact authority validation %s\n' "$name" >&2; exit 1; }
 done
 for stale in \
-  fb9e2b95f5b5cef5eeef4852242d0261099597f1bb31a5ed10e2e2993a3f484e \
-  82e6bd71b0dfbcdb80f61e342a41622e2212194e59c5877df84dec25ab420472 \
-  f5b17cbbb1677533897ab6808de17df2e5fa594ff7b4ed2a2a07038f1a487860 \
-  bf979035848d4f4258e119e823407e3963928a0c6b95c4a3f14272fdabc39468 \
-  "len(x['fileInventory'])==2994"; do
+  62740c60118f9867ac787baadfb8058f935ded317c9d8dc1b4f871bc010c68dd \
+  486a64ce469a5e6c61564633ab43a3ce04a9d3aa78de62005063e471b5c75a6b \
+  936aec62751d6b9fe183ca0875bdf37bfc1e8dfa557bbff479b2f88735ac09fd \
+  fe4c8b2a6da3d582108851452975dd2cb6491c59 \
+  3a963754b00a7f95f95912c48f627265543b2708 \
+  "len(x['fileInventory'])==2996"; do
   if grep -Fq "$stale" "$runner"; then
     printf 'runner retains predecessor export authority: %s\n' "$stale" >&2
     exit 1
@@ -36,13 +37,13 @@ if missing: raise SystemExit('missing fail-closed exact authority checks: '+repr
 x=json.loads(Path(sys.argv[2]).read_text())
 expected={
  'schema':1,
- 'archiveSha256':'62740c60118f9867ac787baadfb8058f935ded317c9d8dc1b4f871bc010c68dd',
- 'manifestSha256':'486a64ce469a5e6c61564633ab43a3ce04a9d3aa78de62005063e471b5c75a6b',
- 'manifestByteLength':626481,
+ 'archiveSha256':'e8957a520c6975fac8144bc60b0f41fc2f32dc3df3eaad9f519aead86789f309',
+ 'manifestSha256':'5d699979549844d803319c2e0745f9ee13751e7ac253ecbe501f29d1aea85df1',
+ 'manifestByteLength':626486,
  'inventoryCount':2996,
- 'framedTreeSha256':'936aec62751d6b9fe183ca0875bdf37bfc1e8dfa557bbff479b2f88735ac09fd',
- 'candidateCommit':'fe4c8b2a6da3d582108851452975dd2cb6491c59',
- 'candidateTree':'3a963754b00a7f95f95912c48f627265543b2708',
+ 'framedTreeSha256':'3b2ad4d1383fa2e19e2345f8577ca21e584cd7b178e6e392daefe226a1ca1029',
+ 'candidateCommit':'b7d707f0b506a7b6debbb7f4aa0345a74955c822',
+ 'candidateTree':'8aec476100bb348583040741d2baea53d8b8e7e7',
 }
 if x!=expected: raise SystemExit('tracked final export authority mismatch')
 for token in ['release-authority.json',"'archiveSha256':os.environ['QW_EXPORT_SHA256']","'manifestSha256':os.environ['QW_EXPORT_MANIFEST_SHA256']","'inventoryCount':int(os.environ['QW_EXPORT_INVENTORY_COUNT'])","'candidateCommit':os.environ['QW_CANDIDATE_COMMIT']"]:
