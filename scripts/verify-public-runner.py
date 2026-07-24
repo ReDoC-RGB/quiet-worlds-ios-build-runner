@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 BUNDLE = "com.wellmadesystems.quietworlds"
-BUILD_NUMBER = "18"
-VERSION = "0.4.7"
+BUILD_NUMBER = "20"
+VERSION = "0.5.0"
 EXPECTED_TEAM = "7D88UFWRTZ"
 EXPECTED_PROFILE_UUID = "3b5d5cd7-a4d3-43ff-b3e1-c0c3a81ffdc8"
 EXPECTED_PROFILE_SHA = "fa3a0823eabfc9b6fd93325e7f5cd947b231325430823a603b75963468bab742"
@@ -188,8 +188,41 @@ def verify_ipa(args) -> None:
         "toolchain":{"xcodeVersion":run_bytes(["xcodebuild","-version"]).decode(errors="replace").strip().splitlines(),"machine":platform.machine(),"imageOS":os.environ.get("ImageOS"),"imageVersion":os.environ.get("ImageVersion")},
         "workflow":{"runId":os.environ.get("GITHUB_RUN_ID"),"runAttempt":os.environ.get("GITHUB_RUN_ATTEMPT"),"runnerName":os.environ.get("RUNNER_NAME")},
     }
-    output.write_text(json.dumps(verification,indent=2,sort_keys=True)+"\n")
-    os.chmod(output,0o600)
+    payload=(json.dumps(verification,indent=2,sort_keys=True)+"\n").encode()
+    absolute=output.absolute();parts=absolute.parent.parts;parent=os.open(parts[0] or os.sep,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))
+    for component in parts[1:]:
+        child=os.open(component,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0),dir_fd=parent);os.close(parent);parent=child
+    temporary="."+absolute.name+".tmp-"+os.urandom(12).hex();created=False;owned=None;errors=[]
+    try:
+        leaf=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,"O_NOFOLLOW",0),0o600,dir_fd=parent);created=True
+        try:
+            view=memoryview(payload)
+            while view:view=view[os.write(leaf,view):]
+            os.fchmod(leaf,0o600);os.fsync(leaf);source=os.fstat(leaf)
+        finally:os.close(leaf)
+        try:os.stat(absolute.name,dir_fd=parent,follow_symlinks=False);raise RuntimeError("verification output must be new")
+        except FileNotFoundError:pass
+        os.link(temporary,absolute.name,src_dir_fd=parent,dst_dir_fd=parent,follow_symlinks=False);owned=source
+        os.unlink(temporary,dir_fd=parent);created=False
+        published=os.stat(absolute.name,dir_fd=parent,follow_symlinks=False)
+        if not stat.S_ISREG(published.st_mode) or (source.st_dev,source.st_ino)!=(published.st_dev,published.st_ino):raise RuntimeError("unsafe verification output publication")
+        os.fsync(parent);owned=None
+    except Exception as error:errors.append(error)
+    finally:
+        if created:
+            try:os.unlink(temporary,dir_fd=parent)
+            except FileNotFoundError:pass
+            except Exception as error:errors.append(error)
+        if owned is not None:
+            try:
+                current=os.stat(absolute.name,dir_fd=parent,follow_symlinks=False)
+                if (owned.st_dev,owned.st_ino)==(current.st_dev,current.st_ino):os.unlink(absolute.name,dir_fd=parent)
+                else:errors.append(RuntimeError("verification output ownership changed before rollback"))
+            except FileNotFoundError:pass
+            except Exception as error:errors.append(error)
+        os.close(parent)
+    if len(errors)==1:raise errors[0]
+    if errors:raise ExceptionGroup("verification publication and cleanup failed",errors)
     # Do not print signing/provenance values to public logs.
     print("PASS signed Ad Hoc IPA structure, identity, provenance, profile, and architecture verified")
 
