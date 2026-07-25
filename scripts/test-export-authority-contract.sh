@@ -37,13 +37,13 @@ if missing: raise SystemExit('missing fail-closed exact authority checks: '+repr
 x=json.loads(Path(sys.argv[2]).read_text())
 expected={
  'schema':1,
- 'archiveSha256':'324634b72b39d69c2b4a76c88cf186f353c012fa69f4174a0a6d5981a94f4cd6',
- 'manifestSha256':'7057bd8d5c892bce41bdae9db526b94dff6fa4b676413b2fe2df1b2bc3d4464f',
+ 'archiveSha256':'e9b5e4712017c57d1c53e73b8a70bc34acfc85cf86279fb375d8771276322278',
+ 'manifestSha256':'7359be44293bf0420a1e4743a405b02eb895c2d7adc25b2d24c6a0f68a00e2d6',
  'manifestByteLength':626486,
  'inventoryCount':2996,
- 'framedTreeSha256':'cc0a8a26fab4adc9a37831d8e70ff0802b493d40dd9175b6f5234e77bf2fc5c0',
- 'candidateCommit':'c1cd09a4a57c806d3b2bb20422048b5f51b082fa',
- 'candidateTree':'8e8a8021821b639c46591bee7720af9736fdf3d3',
+ 'framedTreeSha256':'53b075bfa2684f460682bd08883696aba71c7d093827d5e112a7f04dfb88de6a',
+ 'candidateCommit':'90b4fe64bf2db71d718a7aad1fd9d75837ac6eda',
+ 'candidateTree':'ce29d091418f9d49bf79647fe70bf77315cd07b5',
 }
 if x!=expected: raise SystemExit('tracked final export authority mismatch')
 for token in ['release-authority.json',"'archiveSha256':os.environ['QW_EXPORT_SHA256']","'manifestSha256':os.environ['QW_EXPORT_MANIFEST_SHA256']","'inventoryCount':int(os.environ['QW_EXPORT_INVENTORY_COUNT'])","'candidateCommit':os.environ['QW_CANDIDATE_COMMIT']"]:
