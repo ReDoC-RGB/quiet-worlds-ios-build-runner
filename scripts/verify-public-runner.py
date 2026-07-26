@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 BUNDLE = "com.wellmadesystems.quietworlds"
-BUILD_NUMBER = "30"
+BUILD_NUMBER = "31"
 VERSION = "0.5.0"
 EXPECTED_TEAM = "7D88UFWRTZ"
 EXPECTED_PROFILE_UUID = "3b5d5cd7-a4d3-43ff-b3e1-c0c3a81ffdc8"
