@@ -1,10 +1,10 @@
 {
-  "archiveSha256": "0e403576d598dc32651fdddc310b35f9b975d9bb4f3827f7887992517f23573a",
-  "candidateCommit": "43495c92a9697ad652dbd354cb9f333ffb833c8a",
-  "candidateTree": "a20b2d6f94e0cdae20ff4fb9b73af253156c9ac1",
-  "framedTreeSha256": "67480c6503122c10ef7477f22e0bcc8cb94e12a85a73246dd5044ced169e59a2",
-  "inventoryCount": 3013,
-  "manifestByteLength": 630009,
-  "manifestSha256": "a17b8559f4ad514f9aedc1872d1d72138f62edd1730c50175818e2146ff51b2d",
+  "archiveSha256": "195644d077ab34467a74a0680b45d7468c791116e387482c0099e81016ebab8a",
+  "candidateCommit": "9b042f7dfa7a9a9a68f9d11f56d159814042f0ae",
+  "candidateTree": "f85b6e0d9f55c2405b5803cb51b6133e64b666ce",
+  "framedTreeSha256": "cdebba9bbdbbc3700b4f8ac712fbe916d1a48cd61422edc1a89d0fd553471082",
+  "inventoryCount": 3020,
+  "manifestByteLength": 631476,
+  "manifestSha256": "f8933df9aefa5554d50a191936a6c6a849b90405854ebe18ede33ca91878cc52",
   "schema": 1
 }
